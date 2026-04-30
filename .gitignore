@@ -150,7 +150,7 @@ activemq-data/
 # Environments
 .env
 .envrc
-.venv
+.venv/
 env/
 venv/
 ENV/
@@ -216,3 +216,13 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Project-specific: large data files and generated outputs
+data/raw/
+data/processed/
+figures/
+
+# Keep folder structure in git
+!data/raw/.gitkeep
+!data/processed/.gitkeep
+!figures/.gitkeep

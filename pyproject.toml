@@ -1,0 +1,9 @@
+[project]
+name = "can-2026-poster"
+version = "0.1.0"
+requires-python = ">=3.9"
+dependencies = [
+    "scanpy",
+    "adjusttext",
+    "plotly",
+]
