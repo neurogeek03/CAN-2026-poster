@@ -220,7 +220,6 @@ __marimo__/
 # Project-specific: large data files and generated outputs
 data/raw/
 data/processed/
-figures/
 
 # Keep folder structure in git
 !data/raw/.gitkeep
