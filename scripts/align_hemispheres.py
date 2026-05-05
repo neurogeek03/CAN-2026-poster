@@ -118,10 +118,10 @@ def main():
     sl_scale_cort = make_slider(0.57,  "CORT scale",  0.5, 2.0, init_scale_cort, 0.01)
 
     ax_gap = fig.add_axes([0.08, 0.15, 0.84, 0.03])
-    sl_gap = Slider(ax_gap, "Gap (µm)", 0, span * 1.5, init_gap, valstep=10)
+    sl_gap = Slider(ax_gap, "Gap (µm)", 0, span * 1.5, valinit=init_gap, valstep=10)
 
     ax_yoff = fig.add_axes([0.08, 0.08, 0.84, 0.03])
-    sl_yoff = Slider(ax_yoff, "Y offset (µm)", -span*0.5, span*0.5, init_y_offset, valstep=10)
+    sl_yoff = Slider(ax_yoff, "Y offset (µm)", -span*0.5, span*0.5, valinit=init_y_offset, valstep=10)
 
     # ── update ────────────────────────────────────────────────────────────────
     def update(_val=None):
