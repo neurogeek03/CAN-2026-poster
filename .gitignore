@@ -220,6 +220,16 @@ __marimo__/
 # Project-specific: large data files and generated outputs
 data/raw/
 data/processed/
+data/EdgeR/
+data/LIANA+/
+data/Spatial/
+
+# Claude Code internals
+.claude/
+
+# Binary figure outputs (not tracked)
+figures/*.png
+figures/pdfs/
 
 # Keep folder structure in git
 !data/raw/.gitkeep

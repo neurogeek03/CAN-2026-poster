@@ -1,0 +1,45 @@
+# ── Spatial expression figure configuration ────────────────────────────────
+# Edit this file to change figure parameters without touching the scripts.
+
+# Input data
+h5ad_path: data/Spatial/slide_seq/All_RCTD_types_singlet_score_0_slide_seq_15_named.h5ad
+
+# Samples to compare (order = left panel, right panel)
+samples:
+  - id: B14
+    label: "OIL"
+  - id: B03
+    label: "CORT"
+
+# Gene to visualise (gene_symbol, case-sensitive)
+gene: Sgk1
+
+# Cell class to highlight in the foreground layer.
+# Options: "Glut", "Gaba", "IMN", "Non-Neuron", or null to show all filtered beads.
+cell_class: null
+
+# Cell subclass to highlight (takes precedence over cell_class if set).
+# Use the subclass label derived from RCTD_first_type_rat, e.g. "Oligo_NN", "CA3_Glut".
+# Set to null to fall back to cell_class.
+cell_subclass: "Oligo_NN"
+
+# ── Quality filters ─────────────────────────────────────────────────────────
+neuron_score_threshold: 330      # applied to neurons (Glut, Gaba, IMN)
+non_neuron_score_threshold: 330  # applied to non-neurons (singlet class only)
+
+# ── Visual parameters ────────────────────────────────────────────────────────
+dot_size_bg: 7.0    # background beads (all quality-filtered, gray)
+dot_size_fg: 7.0    # foreground beads (selected cell type, colored)
+bg_color: "#CCCCCC"
+fg_zero_color: "#7BA7BC"  # color for selected beads with zero expression (not white)
+colormap: "Reds"    # colormap for expressing beads; any matplotlib colormap name works
+
+# ── Figure layout ────────────────────────────────────────────────────────────
+fig_width: 14       # inches (total for both panels)
+fig_height: 7
+dpi: 300
+scale_bar_um: 1000  # length of scale bar in micrometres (1000 = 1 mm)
+
+# ── Output ───────────────────────────────────────────────────────────────────
+processed_csv: data/processed/spatial_expression_{gene}.csv
+output_svg: figures/fig_spatial_{gene}_{cell_type}_v1.svg
