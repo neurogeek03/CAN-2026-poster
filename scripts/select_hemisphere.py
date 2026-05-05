@@ -1,23 +1,21 @@
 """
-Interactive hemisphere selector — run once to define crop regions and alignment
-transforms, saved to conf/hemisphere_params.json.
+Interactive hemisphere selector + alignment — run once locally.
+Saves all parameters to conf/hemisphere_params.json.
 
-All downstream figure scripts load that JSON to apply the same crop + rotation.
+Phase 1: For each sample (OIL then CORT), select one hemisphere:
+  - Default (lasso): draw a freehand polygon around the region to keep.
+  - --line-split: click two points to draw a straight dividing line;
+    click "Flip sides" to switch, then "Confirm".
 
-Phase 1: For each sample (OIL then CORT), select a hemisphere either by:
-  - Lasso (default): draw a freehand polygon around the region to keep.
-  - Line split (--line-split): click two points to draw a straight dividing
-    line; all beads on one side are kept. Click "Flip sides" to switch, then
-    "Confirm" to proceed.
-Phase 2: Both cropped hemispheres shown side by side. Use sliders to set
-         rotation and flip per sample, then click "Save".
+Phase 2: Both hemispheres shown together in one view. Adjust rotation,
+  scale, gap (negative = overlap), and vertical offset. Click "Save".
 
 Usage:
     uv run python scripts/select_hemisphere.py
-    uv run python scripts/select_hemisphere.py --cort B03 --oil B14
     uv run python scripts/select_hemisphere.py --line-split
+    uv run python scripts/select_hemisphere.py --cort B03 --oil B14
 
-Requirements: active display (run locally or via X forwarding / VNC).
+Requirements: active display — run locally, not on HPC.
 """
 
 import argparse
@@ -28,13 +26,11 @@ from pathlib import Path
 import matplotlib
 import matplotlib.pyplot as plt
 
-# Fail fast if there's no display before loading heavy dependencies.
 _backend = matplotlib.get_backend()
 if _backend.lower() in ("agg", "svg", "pdf", "ps", "cairo"):
-    import sys as _sys
-    _sys.exit(
-        f"Matplotlib selected a non-interactive backend ({_backend}).\n"
-        "This script requires a display — run it locally, not on a headless server."
+    sys.exit(
+        f"Non-interactive backend ({_backend}).\n"
+        "Run this script locally, not on a headless server."
     )
 
 import numpy as np
@@ -43,13 +39,12 @@ import yaml
 from matplotlib.path import Path as MplPath
 from matplotlib.widgets import Button, CheckButtons, Slider, LassoSelector
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT        = Path(__file__).resolve().parents[1]
 CONFIG_PATH = ROOT / "conf" / "spatial_expression.yaml"
 COORDS_CSV  = ROOT / "data" / "processed" / "hemisphere_coords.csv"
 OUTPUT_PATH = ROOT / "conf" / "hemisphere_params.json"
 
-# Use a subsample size for the live alignment preview (sliders).
-PREVIEW_N = 6000
+PREVIEW_N = 6000   # points used in the live alignment preview
 
 
 # ── helpers ──────────────────────────────────────────────────────────────────
@@ -60,7 +55,6 @@ def load_config():
 
 
 def load_coords(sample_id: str):
-    """Return (x, y) arrays for a single sample from the pre-extracted CSV."""
     if not COORDS_CSV.exists():
         sys.exit(
             f"Coords CSV not found: {COORDS_CSV}\n"
@@ -75,30 +69,33 @@ def load_coords(sample_id: str):
 
 
 def apply_lasso(x, y, poly_verts):
-    """Return boolean mask of points inside the lasso polygon."""
     path = MplPath(poly_verts)
-    pts = np.column_stack([x, y])
-    return path.contains_points(pts)
+    return path.contains_points(np.column_stack([x, y]))
 
 
-def rotate(x, y, angle_deg, cx=None, cy=None):
-    """Rotate (x, y) around (cx, cy). Defaults to centroid."""
-    if cx is None:
-        cx, cy = x.mean(), y.mean()
+def apply_line_split(x, y, pt1, pt2, side):
+    x1, y1 = pt1
+    x2, y2 = pt2
+    cross = (x2 - x1) * (y - y1) - (y2 - y1) * (x - x1)
+    return (cross * side) > 0
+
+
+def rotate(x, y, angle_deg):
+    cx, cy = x.mean(), y.mean()
     rad = np.deg2rad(angle_deg)
     c, s = np.cos(rad), np.sin(rad)
-    xr = cx + c * (x - cx) - s * (y - cy)
-    yr = cy + s * (x - cx) + c * (y - cy)
-    return xr, yr
+    return cx + c*(x-cx) - s*(y-cy), cy + s*(x-cx) + c*(y-cy)
 
 
-def transform(x, y, rotation_deg, flip_x):
-    """Apply flip then rotation (around centroid of current coords)."""
-    if flip_x:
-        cx = x.mean()
-        x = 2 * cx - x
-    x, y = rotate(x, y, rotation_deg)
-    return x, y
+def flip_x(x):
+    return 2 * x.mean() - x
+
+
+def subsample(x, y, n=PREVIEW_N):
+    if len(x) > n:
+        idx = np.random.choice(len(x), n, replace=False)
+        return x[idx], y[idx]
+    return x.copy(), y.copy()
 
 
 # ── Phase 1a: line-split selection ───────────────────────────────────────────
@@ -107,14 +104,12 @@ class LineSplitSession:
     """Click two points to draw a straight dividing line; keep one side."""
 
     def __init__(self, x, y, title):
-        self.x = x
-        self.y = y
-        self._pts = []       # up to 2 clicked points
-        self._side = 1       # +1 or -1
-        self._line = None    # the drawn line artist
+        self.x, self.y = x, y
+        self._pts  = []
+        self._side = 1
+        self._line = None
         self._done = False
 
-        # Subsample for display speed
         if len(x) > 40_000:
             idx = np.random.choice(len(x), 40_000, replace=False)
             self._xd, self._yd = x[idx], y[idx]
@@ -124,8 +119,7 @@ class LineSplitSession:
         self.fig, self.ax = plt.subplots(figsize=(8, 8))
         self.fig.patch.set_facecolor("white")
         self.fig.suptitle(
-            f"{title}\n"
-            "Click two points to define the dividing line, then Confirm.",
+            f"{title}\nClick two points to define the dividing line, then Confirm.",
             fontsize=10,
         )
         self._sc_all = self.ax.scatter(
@@ -142,80 +136,67 @@ class LineSplitSession:
             sp.set_visible(False)
 
         ax_flip = self.fig.add_axes([0.15, 0.01, 0.25, 0.05])
-        self._btn_flip = Button(ax_flip, "Flip sides")
-        self._btn_flip.on_clicked(self._flip)
+        Button(ax_flip, "Flip sides").on_clicked(self._flip)
 
         ax_btn = self.fig.add_axes([0.55, 0.01, 0.25, 0.05])
-        self._btn = Button(ax_btn, "Confirm selection")
-        self._btn.on_clicked(self._confirm)
+        Button(ax_btn, "Confirm selection").on_clicked(self._confirm)
 
-        self._cid = self.fig.canvas.mpl_connect("button_press_event", self._on_click)
+        self.fig.canvas.mpl_connect("button_press_event", self._on_click)
 
-    # ------------------------------------------------------------------
     def _side_mask(self):
-        """Boolean mask: points on the chosen side of the line."""
         if len(self._pts) < 2:
             return np.zeros(len(self._xd), dtype=bool)
         (x1, y1), (x2, y2) = self._pts
-        cross = (x2 - x1) * (self._yd - y1) - (y2 - y1) * (self._xd - x1)
+        cross = (x2-x1)*(self._yd-y1) - (y2-y1)*(self._xd-x1)
         return (cross * self._side) > 0
 
     def _draw_line(self):
-        """Extend the two clicked points to the full axis span."""
         if self._line is not None:
             self._line.remove()
             self._line = None
         if len(self._pts) < 2:
             return
         (x1, y1), (x2, y2) = self._pts
-        xlim = self.ax.get_xlim()
-        ylim = self.ax.get_ylim()
-        # Parametric extension to axis limits
-        dx, dy = x2 - x1, y2 - y1
+        xlim, ylim = self.ax.get_xlim(), self.ax.get_ylim()
+        dx, dy = x2-x1, y2-y1
         if abs(dx) < 1e-9 and abs(dy) < 1e-9:
             return
-        # Find t values where the line exits the bounding box
         ts = []
         if abs(dx) > 1e-9:
-            ts += [(xlim[0] - x1) / dx, (xlim[1] - x1) / dx]
+            ts += [(xlim[0]-x1)/dx, (xlim[1]-x1)/dx]
         if abs(dy) > 1e-9:
-            ts += [(ylim[0] - y1) / dy, (ylim[1] - y1) / dy]
-        t_min, t_max = min(ts), max(ts)
-        lx = [x1 + t_min * dx, x1 + t_max * dx]
-        ly = [y1 + t_min * dy, y1 + t_max * dy]
-        self._line, = self.ax.plot(lx, ly, "r-", lw=1.5, zorder=4)
+            ts += [(ylim[0]-y1)/dy, (ylim[1]-y1)/dy]
+        t0, t1 = min(ts), max(ts)
+        self._line, = self.ax.plot(
+            [x1+t0*dx, x1+t1*dx], [y1+t0*dy, y1+t1*dy],
+            "r-", lw=1.5, zorder=4
+        )
 
     def _refresh(self):
         mask = self._side_mask()
-        if mask.any():
-            self._sc_sel.set_offsets(
-                np.column_stack([self._xd[mask], self._yd[mask]])
-            )
-        else:
-            self._sc_sel.set_offsets(np.empty((0, 2)))
-        self._pt_markers.set_data(
-            [p[0] for p in self._pts], [p[1] for p in self._pts]
+        self._sc_sel.set_offsets(
+            np.column_stack([self._xd[mask], self._yd[mask]]) if mask.any()
+            else np.empty((0, 2))
         )
+        self._pt_markers.set_data([p[0] for p in self._pts], [p[1] for p in self._pts])
         self._draw_line()
         self.fig.canvas.draw_idle()
 
     def _on_click(self, event):
-        if event.inaxes is not self.ax:
-            return
-        if event.button != 1:
+        if event.inaxes is not self.ax or event.button != 1:
             return
         if len(self._pts) >= 2:
-            self._pts = []          # reset on third click
+            self._pts = []
         self._pts.append((event.xdata, event.ydata))
         self._refresh()
 
-    def _flip(self, _event):
+    def _flip(self, _e):
         self._side *= -1
         self._refresh()
 
-    def _confirm(self, _event):
+    def _confirm(self, _e):
         if len(self._pts) < 2:
-            print("  Click two points to define the line first.")
+            print("  Click two points first.")
             return
         self._done = True
         plt.close(self.fig)
@@ -223,36 +204,18 @@ class LineSplitSession:
     def run(self):
         plt.show(block=True)
         if not self._done:
-            sys.exit("Line-split window closed without confirming — exiting.")
-        # Return the two points and which side (+1/-1) was kept
+            sys.exit("Window closed without confirming.")
         return self._pts[0], self._pts[1], self._side
 
-    def get_mask(self, x, y):
-        """Apply the saved line split to the full (unsubsampled) arrays."""
-        (x1, y1), (x2, y2) = self._pts
-        cross = (x2 - x1) * (y - y1) - (y2 - y1) * (x - x1)
-        return (cross * self._side) > 0
 
-
-def apply_line_split(x, y, pt1, pt2, side):
-    """Return boolean mask for points on `side` of the line pt1→pt2."""
-    (x1, y1), (x2, y2) = pt1, pt2
-    cross = (x2 - x1) * (y - y1) - (y2 - y1) * (x - x1)
-    return (cross * side) > 0
-
-
-# ── Phase 1b: lasso selection ────────────────────────────────────────────────
+# ── Phase 1b: lasso selection ─────────────────────────────────────────────────
 
 class LassoSession:
-    """One interactive lasso window for a single sample."""
-
     def __init__(self, x, y, title):
-        self.x = x
-        self.y = y
+        self.x, self.y = x, y
         self.verts = None
         self._done = False
 
-        # Subsample for display speed (scatter with >100 K pts can lag)
         if len(x) > 40_000:
             idx = np.random.choice(len(x), 40_000, replace=False)
             self._xd, self._yd = x[idx], y[idx]
@@ -262,8 +225,7 @@ class LassoSession:
         self.fig, self.ax = plt.subplots(figsize=(8, 8))
         self.fig.patch.set_facecolor("white")
         self.fig.suptitle(
-            f"{title}\n"
-            "Draw a lasso around the hemisphere to keep, then click Confirm.",
+            f"{title}\nDraw a lasso around the hemisphere to keep, then Confirm.",
             fontsize=10,
         )
         self._sc_all = self.ax.scatter(
@@ -279,18 +241,19 @@ class LassoSession:
             sp.set_visible(False)
 
         ax_btn = self.fig.add_axes([0.35, 0.01, 0.3, 0.05])
-        self._btn = Button(ax_btn, "Confirm selection")
-        self._btn.on_clicked(self._confirm)
+        Button(ax_btn, "Confirm selection").on_clicked(self._confirm)
 
-        self._lasso = LassoSelector(self.ax, self._on_select, useblit=True)
+        LassoSelector(self.ax, self._on_select, useblit=True)
 
     def _on_select(self, verts):
         self.verts = verts
         mask = apply_lasso(self._xd, self._yd, verts)
-        self._sc_sel.set_offsets(np.column_stack([self._xd[mask], self._yd[mask]]))
+        self._sc_sel.set_offsets(
+            np.column_stack([self._xd[mask], self._yd[mask]])
+        )
         self.fig.canvas.draw_idle()
 
-    def _confirm(self, _event):
+    def _confirm(self, _e):
         if self.verts is None:
             print("  Draw a lasso first.")
             return
@@ -300,221 +263,244 @@ class LassoSession:
     def run(self):
         plt.show(block=True)
         if not self._done:
-            sys.exit("Lasso window closed without confirming — exiting.")
+            sys.exit("Window closed without confirming.")
         return self.verts
 
 
-# ── Phase 2: alignment ────────────────────────────────────────────────────────
+# ── Phase 2: combined alignment view ─────────────────────────────────────────
 
 class AlignSession:
-    """Side-by-side view with rotation sliders and flip toggles."""
+    """Both hemispheres in one view. Sliders: rotation, scale, gap, y-offset."""
 
     def __init__(self, x_oil, y_oil, x_cort, y_cort):
-        # Subsample each for live preview
-        def _sub(x, y, n):
-            if len(x) > n:
-                idx = np.random.choice(len(x), n, replace=False)
-                return x[idx], y[idx]
-            return x, y
-
-        self.xo, self.yo = _sub(x_oil, y_oil, PREVIEW_N)
-        self.xc, self.yc = _sub(x_cort, y_cort, PREVIEW_N)
-
-        self.rot_oil = 0.0
-        self.rot_cort = 0.0
-        self.flip_oil = False
-        self.flip_cort = False
-        self.gap = 500.0
+        self.xo_full, self.yo_full = x_oil,  y_oil
+        self.xc_full, self.yc_full = x_cort, y_cort
+        self.xo, self.yo = subsample(x_oil,  y_oil)
+        self.xc, self.yc = subsample(x_cort, y_cort)
         self._saved = False
 
-        self.fig = plt.figure(figsize=(13, 7))
+        span = max(
+            x_oil.max()  - x_oil.min(),
+            x_cort.max() - x_cort.min(),
+        )
+
+        self.fig = plt.figure(figsize=(13, 8))
         self.fig.patch.set_facecolor("white")
         self.fig.suptitle(
-            "Adjust rotation / flip / gap, then click Save.",
-            fontsize=10,
+            "Adjust alignment, then click Save", fontsize=11
         )
+        self.fig.subplots_adjust(left=0.06, right=0.98, top=0.93, bottom=0.42)
 
-        # Two axes for the hemispheres
-        self.ax_oil = self.fig.add_axes([0.03, 0.22, 0.44, 0.72])
-        self.ax_crt = self.fig.add_axes([0.53, 0.22, 0.44, 0.72])
-        for ax, lbl in [(self.ax_oil, "OIL"), (self.ax_crt, "CORT")]:
-            ax.set_aspect("equal")
-            ax.set_xticks([])
-            ax.set_yticks([])
-            ax.set_title(lbl, fontsize=10, fontweight="bold")
-            for sp in ax.spines.values():
-                sp.set_visible(False)
+        self.ax = self.fig.add_subplot(111)
+        self.ax.set_aspect("equal")
+        self.ax.set_xticks([])
+        self.ax.set_yticks([])
+        for sp in self.ax.spines.values():
+            sp.set_visible(False)
+        self.ax.set_facecolor("white")
 
-        self._sc_oil = self.ax_oil.scatter([], [], s=1.0, c="#BBBBBB", linewidths=0)
-        self._sc_crt = self.ax_crt.scatter([], [], s=1.0, c="#BBBBBB", linewidths=0)
+        self._sc_o = self.ax.scatter([], [], s=1.0, c="#4393C3",
+                                     linewidths=0, rasterized=True, label="OIL")
+        self._sc_c = self.ax.scatter([], [], s=1.0, c="#D6604D",
+                                     linewidths=0, rasterized=True, label="CORT")
+        self.ax.legend(loc="upper right", markerscale=8, frameon=False, fontsize=9)
 
         # ── sliders ───────────────────────────────────────────────────────────
-        sl_kw = dict(valmin=-180, valmax=180, valinit=0, valstep=0.5)
+        def sl(left, bottom, label, vmin, vmax, vinit, step=None):
+            a = self.fig.add_axes([left, bottom, 0.38, 0.03])
+            kw = dict(valmin=vmin, valmax=vmax, valinit=vinit)
+            if step is not None:
+                kw["valstep"] = step
+            s = Slider(a, label, **kw)
+            s.on_changed(self._update)
+            return s
 
-        ax_ro = self.fig.add_axes([0.07, 0.14, 0.35, 0.03])
-        self.sl_rot_oil = Slider(ax_ro, "OIL rot°", **sl_kw)
-        self.sl_rot_oil.on_changed(self._update)
+        self.sl_rot_o  = sl(0.06, 0.34, "OIL rot°",    -180, 180,       0,    0.5)
+        self.sl_rot_c  = sl(0.56, 0.34, "CORT rot°",   -180, 180,       0,    0.5)
+        self.sl_scl_o  = sl(0.06, 0.28, "OIL scale",    0.3,   2.0,     1.0,  0.01)
+        self.sl_scl_c  = sl(0.56, 0.28, "CORT scale",   0.3,   2.0,     1.0,  0.01)
 
-        ax_rc = self.fig.add_axes([0.57, 0.14, 0.35, 0.03])
-        self.sl_rot_crt = Slider(ax_rc, "CORT rot°", **sl_kw)
-        self.sl_rot_crt.on_changed(self._update)
-
-        ax_gap = self.fig.add_axes([0.25, 0.09, 0.5, 0.03])
-        x_span = max(self.xo.max() - self.xo.min(), self.xc.max() - self.xc.min())
-        self.sl_gap = Slider(
-            ax_gap, "Gap (µm)", valmin=0, valmax=x_span,
-            valinit=x_span * 0.05, valstep=10,
-        )
+        ax_gap = self.fig.add_axes([0.06, 0.22, 0.88, 0.03])
+        self.sl_gap = Slider(ax_gap, "Gap (µm)",
+                             valmin=-span * 0.8, valmax=span * 0.5,
+                             valinit=0, valstep=10)
         self.sl_gap.on_changed(self._update)
 
-        # ── flip toggles ──────────────────────────────────────────────────────
-        ax_fo = self.fig.add_axes([0.07, 0.02, 0.15, 0.06])
-        self._chk_oil = CheckButtons(ax_fo, ["Flip OIL (mirror X)"], [False])
-        self._chk_oil.on_clicked(self._toggle_flip_oil)
+        ax_yoff = self.fig.add_axes([0.06, 0.15, 0.88, 0.03])
+        self.sl_yoff = Slider(ax_yoff, "Y offset (µm)",
+                              valmin=-span * 0.5, valmax=span * 0.5,
+                              valinit=0, valstep=10)
+        self.sl_yoff.on_changed(self._update)
 
-        ax_fc = self.fig.add_axes([0.57, 0.02, 0.15, 0.06])
-        self._chk_crt = CheckButtons(ax_fc, ["Flip CORT (mirror X)"], [False])
-        self._chk_crt.on_clicked(self._toggle_flip_cort)
+        # ── flip checkboxes ───────────────────────────────────────────────────
+        self._flip_o = False
+        self._flip_c = False
 
-        # ── save button ───────────────────────────────────────────────────────
-        ax_save = self.fig.add_axes([0.40, 0.02, 0.18, 0.06])
-        self._btn = Button(ax_save, "Save params")
-        self._btn.on_clicked(self._save)
+        ax_fo = self.fig.add_axes([0.06, 0.07, 0.22, 0.06])
+        self._chk_o = CheckButtons(ax_fo, ["Flip OIL (mirror X)"], [False])
+        self._chk_o.on_clicked(lambda _: self._toggle("o"))
 
-        self._update(None)
+        ax_fc = self.fig.add_axes([0.56, 0.07, 0.22, 0.06])
+        self._chk_c = CheckButtons(ax_fc, ["Flip CORT (mirror X)"], [False])
+        self._chk_c.on_clicked(lambda _: self._toggle("c"))
 
-    def _toggle_flip_oil(self, _label):
-        self.flip_oil = not self.flip_oil
-        self._update(None)
+        ax_save = self.fig.add_axes([0.40, 0.01, 0.20, 0.06])
+        Button(ax_save, "Save params").on_clicked(self._save)
 
-    def _toggle_flip_cort(self, _label):
-        self.flip_cort = not self.flip_cort
-        self._update(None)
+        self._update()
 
-    def _transformed(self):
-        xo, yo = transform(self.xo.copy(), self.yo.copy(),
-                           self.sl_rot_oil.val, self.flip_oil)
-        xc, yc = transform(self.xc.copy(), self.yc.copy(),
-                           self.sl_rot_crt.val, self.flip_cort)
-        return xo, yo, xc, yc
+    def _toggle(self, which):
+        if which == "o":
+            self._flip_o = not self._flip_o
+        else:
+            self._flip_c = not self._flip_c
+        self._update()
 
-    def _update(self, _val):
-        xo, yo, xc, yc = self._transformed()
+    def _place(self, x, y, rot, do_flip, scale, x_anchor, y_shift):
+        """Rotate → flip → scale → translate so x_anchor is the edge toward centre."""
+        x, y = rotate(x, y, rot)
+        if do_flip:
+            x = flip_x(x)
+        x = x * scale
+        y = y * scale
+        # Shift so the inner edge sits at x_anchor
+        if x_anchor >= 0:   # CORT on the right: left edge → x_anchor
+            x = x - x.min() + x_anchor
+        else:               # OIL on the left: right edge → x_anchor
+            x = x - x.max() + x_anchor
+        y = y - y.mean() + y_shift
+        return x, y
 
-        self._sc_oil.set_offsets(np.column_stack([xo, yo]))
-        self._sc_crt.set_offsets(np.column_stack([xc, yc]))
+    def _update(self, _v=None):
+        gap   = self.sl_gap.val
+        yoff  = self.sl_yoff.val
 
-        for ax, x, y in [(self.ax_oil, xo, yo), (self.ax_crt, xc, yc)]:
-            pad = (x.max() - x.min()) * 0.05
-            ax.set_xlim(x.min() - pad, x.max() + pad)
-            ax.set_ylim(y.min() - pad, y.max() + pad)
+        xo, yo = self._place(
+            self.xo, self.yo,
+            self.sl_rot_o.val, self._flip_o, self.sl_scl_o.val,
+            x_anchor=-gap/2, y_shift=0,
+        )
+        xc, yc = self._place(
+            self.xc, self.yc,
+            self.sl_rot_c.val, self._flip_c, self.sl_scl_c.val,
+            x_anchor=+gap/2, y_shift=yoff,
+        )
 
+        self._sc_o.set_offsets(np.column_stack([xo, yo]))
+        self._sc_c.set_offsets(np.column_stack([xc, yc]))
+
+        all_x = np.concatenate([xo, xc])
+        all_y = np.concatenate([yo, yc])
+        px = (all_x.max() - all_x.min()) * 0.04
+        py = (all_y.max() - all_y.min()) * 0.04
+        self.ax.set_xlim(all_x.min()-px, all_x.max()+px)
+        self.ax.set_ylim(all_y.min()-py, all_y.max()+py)
         self.fig.canvas.draw_idle()
 
-    def _save(self, _event):
+    def _save(self, _e):
         self._saved = True
-        self.final_rot_oil = float(self.sl_rot_oil.val)
-        self.final_rot_crt = float(self.sl_rot_crt.val)
-        self.final_gap = float(self.sl_gap.val)
+        self.result = {
+            "oil":  {
+                "rotation_deg": float(self.sl_rot_o.val),
+                "flip_x":       self._flip_o,
+                "scale":        float(self.sl_scl_o.val),
+            },
+            "cort": {
+                "rotation_deg": float(self.sl_rot_c.val),
+                "flip_x":       self._flip_c,
+                "scale":        float(self.sl_scl_c.val),
+            },
+            "alignment": {
+                "x_gap_um":    float(self.sl_gap.val),
+                "y_offset_um": float(self.sl_yoff.val),
+            },
+        }
         plt.close(self.fig)
 
     def run(self):
         plt.show(block=True)
         if not self._saved:
-            sys.exit("Alignment window closed without saving — exiting.")
-        return {
-            "rotation_deg": self.final_rot_oil,
-            "flip_x": self.flip_oil,
-        }, {
-            "rotation_deg": self.final_rot_crt,
-            "flip_x": self.flip_cort,
-        }, self.final_gap
+            sys.exit("Alignment window closed without saving.")
+        return self.result
 
 
 # ── main ──────────────────────────────────────────────────────────────────────
 
 def main():
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--cort", default=None, help="CORT sample ID (default: from config)")
-    parser.add_argument("--oil",  default=None, help="OIL sample ID (default: from config)")
-    parser.add_argument(
-        "--line-split", action="store_true",
-        help="Use straight-line splitting instead of lasso for Phase 1.",
-    )
+    parser = argparse.ArgumentParser(description=__doc__,
+                                     formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("--cort",       default=None, help="CORT sample ID")
+    parser.add_argument("--oil",        default=None, help="OIL sample ID")
+    parser.add_argument("--line-split", action="store_true",
+                        help="Use straight-line splitting instead of lasso")
     args = parser.parse_args()
 
-    cfg = load_config()
-
-    # Resolve sample IDs from args or config
+    cfg     = load_config()
     samples = {s["label"]: s["id"] for s in cfg["samples"]}
     cort_id = args.cort or samples.get("CORT", "B03")
     oil_id  = args.oil  or samples.get("OIL",  "B14")
 
-    print(f"Loading OIL  sample {oil_id} …")
-    x_oil, y_oil = load_coords(oil_id)
+    print(f"Loading OIL  {oil_id} …")
+    x_oil,  y_oil  = load_coords(oil_id)
     print(f"  {len(x_oil):,} beads")
 
-    print(f"Loading CORT sample {cort_id} …")
+    print(f"Loading CORT {cort_id} …")
     x_cort, y_cort = load_coords(cort_id)
     print(f"  {len(x_cort):,} beads")
 
-    # ── Phase 1: hemisphere selection ─────────────────────────────────────────
+    # ── Phase 1 ───────────────────────────────────────────────────────────────
+    split_meta = {}
+
     if args.line_split:
-        print("\nPhase 1 — OIL hemisphere selection (line split)")
-        sess_oil = LineSplitSession(x_oil, y_oil, f"OIL  ({oil_id})")
-        pt1_oil, pt2_oil, side_oil = sess_oil.run()
-        oil_mask = apply_line_split(x_oil, y_oil, pt1_oil, pt2_oil, side_oil)
-        print(f"  Selected {oil_mask.sum():,} / {len(oil_mask):,} beads")
+        print("\nPhase 1 — OIL (line split)")
+        pt1o, pt2o, so = LineSplitSession(x_oil,  y_oil,  f"OIL  ({oil_id})").run()
+        oil_mask = apply_line_split(x_oil, y_oil, pt1o, pt2o, so)
+        print(f"  {oil_mask.sum():,} / {len(oil_mask):,} beads kept")
 
-        print("\nPhase 1 — CORT hemisphere selection (line split)")
-        sess_cort = LineSplitSession(x_cort, y_cort, f"CORT  ({cort_id})")
-        pt1_cort, pt2_cort, side_cort = sess_cort.run()
-        cort_mask = apply_line_split(x_cort, y_cort, pt1_cort, pt2_cort, side_cort)
-        print(f"  Selected {cort_mask.sum():,} / {len(cort_mask):,} beads")
+        print("\nPhase 1 — CORT (line split)")
+        pt1c, pt2c, sc = LineSplitSession(x_cort, y_cort, f"CORT  ({cort_id})").run()
+        cort_mask = apply_line_split(x_cort, y_cort, pt1c, pt2c, sc)
+        print(f"  {cort_mask.sum():,} / {len(cort_mask):,} beads kept")
 
-        # Store as a thin lasso polygon (the two defining points) for the JSON
-        oil_verts  = [list(pt1_oil),  list(pt2_oil)]
-        cort_verts = [list(pt1_cort), list(pt2_cort)]
         split_meta = {
-            "oil":  {"pt1": list(pt1_oil),  "pt2": list(pt2_oil),  "side": side_oil},
-            "cort": {"pt1": list(pt1_cort), "pt2": list(pt2_cort), "side": side_cort},
+            "oil":  {"pt1": list(pt1o), "pt2": list(pt2o), "side": so},
+            "cort": {"pt1": list(pt1c), "pt2": list(pt2c), "side": sc},
         }
+        oil_verts  = [list(pt1o), list(pt2o)]
+        cort_verts = [list(pt1c), list(pt2c)]
     else:
-        print("\nPhase 1 — OIL hemisphere selection")
-        oil_verts = LassoSession(x_oil, y_oil, f"OIL  ({oil_id})").run()
-        oil_mask  = apply_lasso(x_oil, y_oil, oil_verts)
-        print(f"  Selected {oil_mask.sum():,} / {len(oil_mask):,} beads")
+        print("\nPhase 1 — OIL (lasso)")
+        oil_verts  = LassoSession(x_oil,  y_oil,  f"OIL  ({oil_id})").run()
+        oil_mask   = apply_lasso(x_oil, y_oil, oil_verts)
+        print(f"  {oil_mask.sum():,} / {len(oil_mask):,} beads kept")
 
-        print("\nPhase 1 — CORT hemisphere selection")
+        print("\nPhase 1 — CORT (lasso)")
         cort_verts = LassoSession(x_cort, y_cort, f"CORT  ({cort_id})").run()
         cort_mask  = apply_lasso(x_cort, y_cort, cort_verts)
-        print(f"  Selected {cort_mask.sum():,} / {len(cort_mask):,} beads")
-        split_meta = None
+        print(f"  {cort_mask.sum():,} / {len(cort_mask):,} beads kept")
 
-    # ── Phase 2: alignment ────────────────────────────────────────────────────
+    # ── Phase 2 ───────────────────────────────────────────────────────────────
     print("\nPhase 2 — alignment")
-    align_oil, align_cort, gap = AlignSession(
-        x_oil[oil_mask], y_oil[oil_mask],
+    result = AlignSession(
+        x_oil[oil_mask],   y_oil[oil_mask],
         x_cort[cort_mask], y_cort[cort_mask],
     ).run()
 
     # ── Save ──────────────────────────────────────────────────────────────────
     params = {
         "oil": {
-            "sample": oil_id,
+            "sample":     oil_id,
             "lasso_poly": [[float(v[0]), float(v[1])] for v in oil_verts],
-            **align_oil,
+            **result["oil"],
         },
         "cort": {
-            "sample": cort_id,
+            "sample":     cort_id,
             "lasso_poly": [[float(v[0]), float(v[1])] for v in cort_verts],
-            **align_cort,
+            **result["cort"],
         },
-        "alignment": {
-            "x_gap_um": gap,
-        },
+        "alignment": result["alignment"],
     }
-    if split_meta is not None:
+    if split_meta:
         params["line_split"] = split_meta
 
     OUTPUT_PATH.parent.mkdir(parents=True, exist_ok=True)
@@ -522,9 +508,6 @@ def main():
         json.dump(params, f, indent=2)
 
     print(f"\nSaved → {OUTPUT_PATH}")
-    print("  OIL :", align_oil)
-    print("  CORT:", align_cort)
-    print(f"  gap : {gap:.0f} µm")
 
 
 if __name__ == "__main__":
