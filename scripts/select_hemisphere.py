@@ -136,10 +136,12 @@ class LineSplitSession:
             sp.set_visible(False)
 
         ax_flip = self.fig.add_axes([0.15, 0.01, 0.25, 0.05])
-        Button(ax_flip, "Flip sides").on_clicked(self._flip)
+        self._btn_flip = Button(ax_flip, "Flip sides")
+        self._btn_flip.on_clicked(self._flip)
 
         ax_btn = self.fig.add_axes([0.55, 0.01, 0.25, 0.05])
-        Button(ax_btn, "Confirm selection").on_clicked(self._confirm)
+        self._btn_confirm = Button(ax_btn, "Confirm selection")
+        self._btn_confirm.on_clicked(self._confirm)
 
         self.fig.canvas.mpl_connect("button_press_event", self._on_click)
 
@@ -241,9 +243,10 @@ class LassoSession:
             sp.set_visible(False)
 
         ax_btn = self.fig.add_axes([0.35, 0.01, 0.3, 0.05])
-        Button(ax_btn, "Confirm selection").on_clicked(self._confirm)
+        self._btn_confirm = Button(ax_btn, "Confirm selection")
+        self._btn_confirm.on_clicked(self._confirm)
 
-        LassoSelector(self.ax, self._on_select, useblit=True)
+        self._lasso = LassoSelector(self.ax, self._on_select, useblit=True)
 
     def _on_select(self, verts):
         self.verts = verts
@@ -345,7 +348,8 @@ class AlignSession:
         self._chk_c.on_clicked(lambda _: self._toggle("c"))
 
         ax_save = self.fig.add_axes([0.40, 0.01, 0.20, 0.06])
-        Button(ax_save, "Save params").on_clicked(self._save)
+        self._btn_save = Button(ax_save, "Save params")
+        self._btn_save.on_clicked(self._save)
 
         self._update()
 
