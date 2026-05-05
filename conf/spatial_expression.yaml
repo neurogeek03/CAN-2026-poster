@@ -35,10 +35,10 @@ fg_zero_color: "#7BA7BC"  # color for selected beads with zero expression (not w
 colormap: "Reds"    # colormap for expressing beads; any matplotlib colormap name works
 
 # ── Figure layout ────────────────────────────────────────────────────────────
-fig_width: 14       # inches (total for both panels)
-fig_height: 7
+fig_width: 10
+fig_height: 10
 dpi: 300
-scale_bar_um: 1000  # length of scale bar in micrometres (1000 = 1 mm)
+scale_bar_um: 500   # length of scale bar in micrometres
 
 # ── Output ───────────────────────────────────────────────────────────────────
 processed_csv: data/processed/spatial_expression_{gene}.csv
