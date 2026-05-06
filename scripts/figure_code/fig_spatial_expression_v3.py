@@ -49,7 +49,7 @@ CELL_TYPE_ALIASES = {
         "CT_SUB_Glut",
         "HPF_CR_Glut",
     ],
-    "ca": [
+    "Hippocampus": [
         "CA1_ProS_Glut",
         "CA2_FC_IG_Glut",
         "CA3_Glut",
@@ -219,7 +219,7 @@ def plot_sample(ax, df_bg, df_fg, gene: str, cfg: dict, vmax: float, cmap):
     return ax.scatter([], [], c=[], cmap=cmap, vmin=0, vmax=vmax)
 
 
-def add_scale_bar(ax, scale_um: float, df: pd.DataFrame):
+def add_scale_bar(ax, scale_um: float, df: pd.DataFrame, cfg: dict):
     x_range  = df["x"].max() - df["x"].min()
     y_range  = df["y"].max() - df["y"].min()
     margin_x = x_range * 0.03
@@ -232,7 +232,7 @@ def add_scale_bar(ax, scale_um: float, df: pd.DataFrame):
     label = f"{int(scale_um/1000)} mm" if scale_um >= 1000 else f"{int(scale_um)} µm"
     ax.text(
         (x0 + x1) / 2, y0 + y_range * 0.015,
-        label, ha="center", va="bottom", fontsize=16, color="black",
+        label, ha="center", va="bottom", fontsize=16 * cfg["text_scale"], color="black",
     )
 
 
@@ -244,6 +244,8 @@ def main():
     parser.add_argument("gene",      help="Gene symbol (e.g. Sgk1)")
     parser.add_argument("--dot-size", type=float, default=None,
                         help="Override dot size for bg and fg")
+    parser.add_argument("--no-cell-type-label", action="store_true",
+                        help="Omit the cell type label above the colorbar")
     args = parser.parse_args()
 
     cfg = load_config()
@@ -364,7 +366,7 @@ def main():
         spine.set_visible(False)
 
     df_bg_combined = pd.concat([df for _, df in df_bg_placed])
-    add_scale_bar(ax, cfg["scale_bar_um"], df_bg_combined)
+    add_scale_bar(ax, cfg["scale_bar_um"], df_bg_combined, cfg)
 
     # OIL / CORT labels — symmetric distance from gap centre (x=0)
     x_range   = df_bg_combined["x"].max() - df_bg_combined["x"].min()
@@ -375,9 +377,9 @@ def main():
     x_label = x_sym / 4 + 600
     y_label = max(hem_left[1]["y"].max(), hem_right[1]["y"].max())
     ax.text(-x_label, y_label, hem_left[0],
-            ha="right", va="top", fontsize=24, fontweight="bold")
+            ha="right", va="top", fontsize=24 * cfg["text_scale"], fontweight="bold")
     ax.text(+x_label, y_label, hem_right[0],
-            ha="left",  va="top", fontsize=24, fontweight="bold")
+            ha="left",  va="top", fontsize=24 * cfg["text_scale"], fontweight="bold")
 
     # Force gap centre (x=0) to be the figure centre
     x_half = max(abs(df_bg_combined["x"].min()), abs(df_bg_combined["x"].max()), x_sym)
@@ -395,10 +397,12 @@ def main():
     if sc_obj is not None:
         cbar_ax = fig.add_axes([0.35, 0.01, 0.3, 0.06])
         cb = fig.colorbar(sc_obj, cax=cbar_ax, orientation="horizontal")
-        cb.set_label(f"{gene} expression", fontsize=20)
-        cb.ax.tick_params(labelsize=20)
-        if fg_label:
-            cbar_ax.set_title(fg_label, fontsize=20, pad=8, fontweight="bold")
+        cb.set_ticks([0, vmax])
+        cb.set_ticklabels(["0", f"{vmax:.2g}"])
+        cb.set_label(gene, fontsize=24 * cfg["text_scale"], fontweight="bold")
+        cb.ax.tick_params(labelsize=20 * cfg["text_scale"])
+        if fg_label and not args.no_cell_type_label:
+            cbar_ax.set_title(fg_label, fontsize=20 * cfg["text_scale"], pad=8, fontweight="bold")
 
     plt.subplots_adjust(left=0.02, right=0.98, top=0.97, bottom=0.07, wspace=0)
 

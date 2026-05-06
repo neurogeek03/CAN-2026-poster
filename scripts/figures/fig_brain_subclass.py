@@ -75,6 +75,14 @@ def apply_alignment(df_oil: pd.DataFrame, df_cort: pd.DataFrame,
     xo, yo = transform(df_oil,  params["oil"]["rotation_deg"])
     xc, yc = transform(df_cort, params["cort"]["rotation_deg"])
 
+    # normalize both brains to the same bounding box so they appear the same size
+    def _max_span(x, y):
+        return max(x.max() - x.min(), y.max() - y.min())
+
+    ref_span = _max_span(xo, yo)
+    sc = ref_span / _max_span(xc, yc)
+    xc, yc = xc * sc, yc * sc
+
     half_w_o = (xo.max() - xo.min()) / 2
     half_w_c = (xc.max() - xc.min()) / 2
 
