@@ -88,9 +88,9 @@ def main():
     init_y_offset   = aln.get("y_offset_um", 0.0)
 
     # ── figure layout ─────────────────────────────────────────────────────────
-    fig, ax = plt.subplots(figsize=(12, 8))
+    fig, ax = plt.subplots(figsize=(12, 9))
     fig.patch.set_facecolor("white")
-    fig.subplots_adjust(left=0.08, right=0.98, top=0.95, bottom=0.35)
+    fig.subplots_adjust(left=0.08, right=0.98, top=0.95, bottom=0.42)
     fig.suptitle("Align hemispheres — adjust sliders, then Save", fontsize=11)
 
     ax.set_aspect("equal")
@@ -107,21 +107,24 @@ def main():
     # ── sliders ───────────────────────────────────────────────────────────────
     span = max(x_oil.max()-x_oil.min(), x_cort.max()-x_cort.min())
 
-    def make_slider(left, label, vmin, vmax, vinit, step=None):
-        a = fig.add_axes([left, 0.22, 0.35, 0.03])
+    def make_slider(left, bottom, label, vmin, vmax, vinit, step=None):
+        a = fig.add_axes([left, bottom, 0.35, 0.03])
         kw = dict(valmin=vmin, valmax=vmax, valinit=vinit)
         if step:
             kw["valstep"] = step
         return Slider(a, label, **kw)
 
-    sl_scale_oil  = make_slider(0.08,  "OIL scale",   0.5, 2.0, init_scale_oil,  0.01)
-    sl_scale_cort = make_slider(0.57,  "CORT scale",  0.5, 2.0, init_scale_cort, 0.01)
+    sl_scale_oil  = make_slider(0.08, 0.29, "OIL scale",   0.5, 2.0, init_scale_oil,  0.01)
+    sl_scale_cort = make_slider(0.57, 0.29, "CORT scale",  0.5, 2.0, init_scale_cort, 0.01)
 
-    ax_gap = fig.add_axes([0.08, 0.15, 0.84, 0.03])
+    ax_gap = fig.add_axes([0.08, 0.22, 0.84, 0.03])
     sl_gap = Slider(ax_gap, "Gap (µm)", 0, span * 1.5, valinit=init_gap, valstep=10)
 
-    ax_yoff = fig.add_axes([0.08, 0.08, 0.84, 0.03])
+    ax_yoff = fig.add_axes([0.08, 0.15, 0.84, 0.03])
     sl_yoff = Slider(ax_yoff, "Y offset (µm)", -span*0.5, span*0.5, valinit=init_y_offset, valstep=10)
+
+    ax_zoom = fig.add_axes([0.08, 0.08, 0.84, 0.03])
+    sl_zoom = Slider(ax_zoom, "Zoom", 0.5, 8.0, valinit=1.0, valstep=0.1)
 
     # ── update ────────────────────────────────────────────────────────────────
     def update(_val=None):
@@ -129,10 +132,12 @@ def main():
         sc = sl_scale_cort.val
         gap = sl_gap.val
         yoff = sl_yoff.val
+        zoom = sl_zoom.val
 
-        # OIL on left, CORT on right
-        oil_half_w  = (xo.max() - xo.min()) * so / 2
-        cort_half_w = (xc.max() - xc.min()) * sc / 2
+        # OIL on left, CORT on right — use full-resolution spans for positioning
+        # so a heavily-masked CORT still lands at the right x_anchor
+        oil_half_w  = (x_oil.max()  - x_oil.min())  * so / 2
+        cort_half_w = (x_cort.max() - x_cort.min()) * sc / 2
 
         x_oil_plot  = xo * so - oil_half_w - gap/2
         y_oil_plot  = yo * so
@@ -143,22 +148,26 @@ def main():
         sc_oil.set_offsets(np.column_stack([x_oil_plot, y_oil_plot]))
         sc_cort.set_offsets(np.column_stack([x_cort_plot, y_cort_plot]))
 
+        # View: center on combined extent, apply zoom
         all_x = np.concatenate([x_oil_plot, x_cort_plot])
         all_y = np.concatenate([y_oil_plot, y_cort_plot])
-        pad_x = (all_x.max() - all_x.min()) * 0.05
-        pad_y = (all_y.max() - all_y.min()) * 0.05
-        ax.set_xlim(all_x.min()-pad_x, all_x.max()+pad_x)
-        ax.set_ylim(all_y.min()-pad_y, all_y.max()+pad_y)
+        cx = (all_x.min() + all_x.max()) / 2
+        cy = (all_y.min() + all_y.max()) / 2
+        half_w = (all_x.max() - all_x.min()) * 0.55 / zoom
+        half_h = (all_y.max() - all_y.min()) * 0.55 / zoom
+        ax.set_xlim(cx - half_w, cx + half_w)
+        ax.set_ylim(cy - half_h, cy + half_h)
         fig.canvas.draw_idle()
 
     sl_scale_oil.on_changed(update)
     sl_scale_cort.on_changed(update)
     sl_gap.on_changed(update)
     sl_yoff.on_changed(update)
+    sl_zoom.on_changed(update)
     update()
 
     # ── save button ───────────────────────────────────────────────────────────
-    ax_save = fig.add_axes([0.40, 0.01, 0.20, 0.05])
+    ax_save = fig.add_axes([0.40, 0.02, 0.20, 0.04])
     btn = Button(ax_save, "Save params")
 
     def save(_event):

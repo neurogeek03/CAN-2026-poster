@@ -287,12 +287,12 @@ class AlignSession:
             x_cort.max() - x_cort.min(),
         )
 
-        self.fig = plt.figure(figsize=(13, 8))
+        self.fig = plt.figure(figsize=(13, 9))
         self.fig.patch.set_facecolor("white")
         self.fig.suptitle(
             "Adjust alignment, then click Save", fontsize=11
         )
-        self.fig.subplots_adjust(left=0.06, right=0.98, top=0.93, bottom=0.42)
+        self.fig.subplots_adjust(left=0.06, right=0.98, top=0.93, bottom=0.48)
 
         self.ax = self.fig.add_subplot(111)
         self.ax.set_aspect("equal")
@@ -318,36 +318,40 @@ class AlignSession:
             s.on_changed(self._update)
             return s
 
-        self.sl_rot_o  = sl(0.06, 0.34, "OIL rot°",    -180, 180,       0,    0.5)
-        self.sl_rot_c  = sl(0.56, 0.34, "CORT rot°",   -180, 180,       0,    0.5)
-        self.sl_scl_o  = sl(0.06, 0.28, "OIL scale",    0.3,   2.0,     1.0,  0.01)
-        self.sl_scl_c  = sl(0.56, 0.28, "CORT scale",   0.3,   2.0,     1.0,  0.01)
+        self.sl_rot_o  = sl(0.06, 0.40, "OIL rot°",    -180, 180,       0,    0.5)
+        self.sl_rot_c  = sl(0.56, 0.40, "CORT rot°",   -180, 180,       0,    0.5)
+        self.sl_scl_o  = sl(0.06, 0.34, "OIL scale",    0.3,   2.0,     1.0,  0.01)
+        self.sl_scl_c  = sl(0.56, 0.34, "CORT scale",   0.3,   2.0,     1.0,  0.01)
 
-        ax_gap = self.fig.add_axes([0.06, 0.22, 0.88, 0.03])
+        ax_gap = self.fig.add_axes([0.06, 0.28, 0.88, 0.03])
         self.sl_gap = Slider(ax_gap, "Gap (µm)",
                              valmin=-span * 0.8, valmax=span * 0.5,
                              valinit=0, valstep=10)
         self.sl_gap.on_changed(self._update)
 
-        ax_yoff = self.fig.add_axes([0.06, 0.15, 0.88, 0.03])
+        ax_yoff = self.fig.add_axes([0.06, 0.21, 0.88, 0.03])
         self.sl_yoff = Slider(ax_yoff, "Y offset (µm)",
                               valmin=-span * 0.5, valmax=span * 0.5,
                               valinit=0, valstep=10)
         self.sl_yoff.on_changed(self._update)
 
+        ax_zoom = self.fig.add_axes([0.06, 0.14, 0.88, 0.03])
+        self.sl_zoom = Slider(ax_zoom, "Zoom", 0.5, 8.0, valinit=1.0, valstep=0.1)
+        self.sl_zoom.on_changed(self._update)
+
         # ── flip checkboxes ───────────────────────────────────────────────────
         self._flip_o = False
         self._flip_c = False
 
-        ax_fo = self.fig.add_axes([0.06, 0.07, 0.22, 0.06])
+        ax_fo = self.fig.add_axes([0.06, 0.07, 0.22, 0.05])
         self._chk_o = CheckButtons(ax_fo, ["Flip OIL (mirror X)"], [False])
         self._chk_o.on_clicked(lambda _: self._toggle("o"))
 
-        ax_fc = self.fig.add_axes([0.56, 0.07, 0.22, 0.06])
+        ax_fc = self.fig.add_axes([0.56, 0.07, 0.22, 0.05])
         self._chk_c = CheckButtons(ax_fc, ["Flip CORT (mirror X)"], [False])
         self._chk_c.on_clicked(lambda _: self._toggle("c"))
 
-        ax_save = self.fig.add_axes([0.40, 0.01, 0.20, 0.06])
+        ax_save = self.fig.add_axes([0.40, 0.02, 0.20, 0.04])
         self._btn_save = Button(ax_save, "Save params")
         self._btn_save.on_clicked(self._save)
 
@@ -378,6 +382,7 @@ class AlignSession:
     def _update(self, _v=None):
         gap   = self.sl_gap.val
         yoff  = self.sl_yoff.val
+        zoom  = self.sl_zoom.val
 
         xo, yo = self._place(
             self.xo, self.yo,
@@ -395,10 +400,12 @@ class AlignSession:
 
         all_x = np.concatenate([xo, xc])
         all_y = np.concatenate([yo, yc])
-        px = (all_x.max() - all_x.min()) * 0.04
-        py = (all_y.max() - all_y.min()) * 0.04
-        self.ax.set_xlim(all_x.min()-px, all_x.max()+px)
-        self.ax.set_ylim(all_y.min()-py, all_y.max()+py)
+        cx = (all_x.min() + all_x.max()) / 2
+        cy = (all_y.min() + all_y.max()) / 2
+        half_w = (all_x.max() - all_x.min()) * 0.55 / zoom
+        half_h = (all_y.max() - all_y.min()) * 0.55 / zoom
+        self.ax.set_xlim(cx - half_w, cx + half_w)
+        self.ax.set_ylim(cy - half_h, cy + half_h)
         self.fig.canvas.draw_idle()
 
     def _save(self, _e):

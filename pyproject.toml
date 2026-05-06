@@ -6,4 +6,5 @@ dependencies = [
     "scanpy",
     "adjusttext",
     "plotly",
+    "pymupdf>=1.26.5",
 ]

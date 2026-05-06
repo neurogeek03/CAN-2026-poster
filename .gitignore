@@ -230,8 +230,9 @@ data/Spatial/
 # Binary figure outputs (not tracked)
 figures/*.png
 figures/pdfs/
+figures/pdfs_old/
+figures/genes_half_half/
 
 # Keep folder structure in git
 !data/raw/.gitkeep
 !data/processed/.gitkeep
-!figures/.gitkeep

@@ -32,7 +32,7 @@
     "scale": 1.0
   },
   "alignment": {
-    "x_gap_um": 650.0,
+    "x_gap_um": 1350.0,
     "y_offset_um": -358.75
   },
   "line_split": {
