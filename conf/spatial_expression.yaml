@@ -28,11 +28,11 @@ neuron_score_threshold: 330      # applied to neurons (Glut, Gaba, IMN)
 non_neuron_score_threshold: 330  # applied to non-neurons (singlet class only)
 
 # ── Visual parameters ────────────────────────────────────────────────────────
-dot_size_bg: 7.0    # background beads (all quality-filtered, gray)
-dot_size_fg: 7.0    # foreground beads (selected cell type, colored)
+dot_size_bg: 4.0    # background beads (all quality-filtered, gray)
+dot_size_fg: 14.0    # foreground beads (selected cell type, colored)
 bg_color: "#CCCCCC"
-fg_zero_color: "#7BA7BC"  # color for selected beads with zero expression (not white)
-colormap: "Reds"    # colormap for expressing beads; any matplotlib colormap name works
+fg_zero_color: "#D4A843"  # color for selected beads with zero expression
+colormap: "#C8A8DB:#420966"  # "#start:#end" → linear colormap; or any matplotlib colormap name
 
 # ── Figure layout ────────────────────────────────────────────────────────────
 fig_width: 10

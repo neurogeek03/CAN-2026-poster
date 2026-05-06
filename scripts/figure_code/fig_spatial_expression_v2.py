@@ -22,11 +22,14 @@ import json
 import subprocess
 from pathlib import Path
 
+import matplotlib
 import matplotlib.colors as mcolors
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import yaml
+
+matplotlib.rcParams["font.family"] = "Arial"
 
 ROOT        = Path(__file__).resolve().parents[2]
 CONFIG_PATH = ROOT / "conf" / "spatial_expression.yaml"
@@ -101,6 +104,39 @@ def apply_hemisphere_transform(df: pd.DataFrame, key: str, params: dict) -> pd.D
     return out
 
 
+def _straighten_cut_edge(df_bg: pd.DataFrame, df_fg: pd.DataFrame, hkey: str):
+    """
+    Shear-correct a section so its inner cut edge is perfectly vertical.
+    Fits a line to the inner-edge beads of df_bg (rightmost for 'oil',
+    leftmost for 'cort'), then removes the slope from both df_bg and df_fg.
+    """
+    x = df_bg["x"].to_numpy(float)
+    y = df_bg["y"].to_numpy(float)
+
+    edge_pct = 95 if hkey == "oil" else 5
+
+    n_bins = 30
+    edges = np.percentile(y, np.linspace(0, 100, n_bins + 1))
+    x_edge, y_mid = [], []
+    for lo, hi in zip(edges[:-1], edges[1:]):
+        m = (y >= lo) & (y <= hi)
+        if m.sum() >= 5:
+            x_edge.append(np.percentile(x[m], edge_pct))
+            y_mid.append((lo + hi) / 2)
+
+    if len(x_edge) < 3:
+        return df_bg, df_fg
+
+    slope = np.polyfit(y_mid, x_edge, 1)[0]   # dx/dy of the inner edge
+    y_ref = float(np.median(y))
+
+    df_bg = df_bg.copy()
+    df_fg = df_fg.copy()
+    for df in (df_bg, df_fg):
+        df["x"] = df["x"].to_numpy(float) - slope * (df["y"].to_numpy(float) - y_ref)
+    return df_bg, df_fg
+
+
 # ── plotting helpers (unchanged from v1) ─────────────────────────────────────
 
 def load_config():
@@ -173,7 +209,7 @@ def add_scale_bar(ax, scale_um: float, df: pd.DataFrame):
     label = f"{int(scale_um/1000)} mm" if scale_um >= 1000 else f"{int(scale_um)} µm"
     ax.text(
         (x0 + x1) / 2, y0 + y_range * 0.015,
-        label, ha="center", va="bottom", fontsize=8, color="black",
+        label, ha="center", va="bottom", fontsize=16, color="black",
     )
 
 
@@ -267,6 +303,7 @@ def main():
         if hkey is not None and "line_split" in hparams:
             df_bg = apply_hemisphere_transform(df_bg_raw, hkey, hparams)
             df_fg = apply_hemisphere_transform(df_fg_raw, hkey, hparams)
+            df_bg, df_fg = _straighten_cut_edge(df_bg, df_fg, hkey)
 
             if "alignment" in hparams:
                 aln      = hparams["alignment"]
@@ -311,7 +348,7 @@ def main():
     hem_left  = next((lbl, df) for lbl, df in df_bg_placed if df["x"].mean() < 0)
     hem_right = next((lbl, df) for lbl, df in df_bg_placed if df["x"].mean() >= 0)
     x_sym   = max(abs(hem_left[1]["x"].min()), abs(hem_right[1]["x"].max())) + margin
-    x_label = x_sym / 4
+    x_label = x_sym / 4 + 600
     y_label = max(hem_left[1]["y"].max(), hem_right[1]["y"].max())
     ax.text(-x_label, y_label, hem_left[0],
             ha="right", va="top", fontsize=24, fontweight="bold")
@@ -332,21 +369,21 @@ def main():
     fg_label   = alias or (subclass if isinstance(subclass, str) else None) or cell_class
 
     if sc_obj is not None:
-        cbar_ax = fig.add_axes([0.35, 0.04, 0.3, 0.04])
+        cbar_ax = fig.add_axes([0.35, 0.01, 0.3, 0.03])
         cb = fig.colorbar(sc_obj, cax=cbar_ax, orientation="horizontal")
-        cb.set_label(f"{gene} expression", fontsize=15)
-        cb.ax.tick_params(labelsize=18)
+        cb.set_label(f"{gene} expression", fontsize=10)
+        cb.ax.tick_params(labelsize=10)
         if fg_label:
-            cbar_ax.set_title(fg_label, fontsize=14, pad=8, fontweight="bold")
+            cbar_ax.set_title(fg_label, fontsize=10, pad=4, fontweight="bold")
 
-    plt.subplots_adjust(left=0.02, right=0.98, top=0.97, bottom=0.14, wspace=0)
+    plt.subplots_adjust(left=0.02, right=0.98, top=0.97, bottom=0.07, wspace=0)
 
     cell_type_slug = (
         alias or (subclass if isinstance(subclass, str) else None) or cell_class or "all"
     ).replace(" ", "_")
-    out_path = ROOT / cfg["output_svg"].format(gene=gene, cell_type=cell_type_slug)
+    out_path = ROOT / "figures" / "genes_half_half" / f"fig_spatial_{gene}_{cell_type_slug}.pdf"
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    fig.savefig(out_path, dpi=cfg["dpi"], bbox_inches="tight", facecolor="white")
+    fig.savefig(out_path, bbox_inches="tight", facecolor="white")
     print(f"Saved → {out_path}")
 
 
