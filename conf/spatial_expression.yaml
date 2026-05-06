@@ -34,6 +34,10 @@ bg_color: "#CCCCCC"
 fg_zero_color: "#D4A843"  # color for selected beads with zero expression
 colormap: "#C8A8DB:#420966"  # "#start:#end" → linear colormap; or any matplotlib colormap name
 
+# ── Crop ─────────────────────────────────────────────────────────────────────
+# Set to true to apply the rectangular crop defined in conf/hemisphere_params.json.
+use_crop: true
+
 # ── Figure layout ────────────────────────────────────────────────────────────
 fig_width: 10
 fig_height: 10

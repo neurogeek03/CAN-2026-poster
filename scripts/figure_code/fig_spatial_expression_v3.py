@@ -386,8 +386,14 @@ def main():
     y_all  = df_bg_combined["y"]
     y_mid  = y_all.mean()
     y_half = max(y_all.max() - y_mid, y_mid - y_all.min())
-    ax.set_xlim(-x_half, x_half)
-    ax.set_ylim(y_mid - y_half, y_mid + y_half)
+    if cfg.get("use_crop", False) and "crop" in hparams:
+        cr = hparams["crop"]
+        ax.set_xlim(cr["x_min"], cr["x_max"])
+        ax.set_ylim(cr["y_min"], cr["y_max"])
+        print(f"Crop applied: x=[{cr['x_min']:.0f}, {cr['x_max']:.0f}]  y=[{cr['y_min']:.0f}, {cr['y_max']:.0f}]")
+    else:
+        ax.set_xlim(-x_half, x_half)
+        ax.set_ylim(y_mid - y_half, y_mid + y_half)
 
     subclass   = cfg.get("cell_subclass")
     cell_class = cfg.get("cell_class")
