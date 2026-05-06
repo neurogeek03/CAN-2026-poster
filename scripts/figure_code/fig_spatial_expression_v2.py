@@ -311,7 +311,7 @@ def main():
     hem_left  = next((lbl, df) for lbl, df in df_bg_placed if df["x"].mean() < 0)
     hem_right = next((lbl, df) for lbl, df in df_bg_placed if df["x"].mean() >= 0)
     x_sym   = max(abs(hem_left[1]["x"].min()), abs(hem_right[1]["x"].max())) + margin
-    x_label = x_sym / 2
+    x_label = x_sym / 4
     y_label = max(hem_left[1]["y"].max(), hem_right[1]["y"].max())
     ax.text(-x_label, y_label, hem_left[0],
             ha="right", va="top", fontsize=24, fontweight="bold")
