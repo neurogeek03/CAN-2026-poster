@@ -51,6 +51,10 @@ else:
 
 PREVIEW_N = 5000
 
+print(f"Mode     : {'slide-tags (BC28/BC3)' if args.slidetags else 'slide-seq (B14/B03)'}")
+print(f"CSV      : {CSV}")
+print(f"Params   : {PARAMS}")
+
 
 def rotate(x, y, angle_deg):
     cx, cy = x.mean(), y.mean()
@@ -107,7 +111,8 @@ def main():
     fig, ax = plt.subplots(figsize=(12, 8))
     fig.patch.set_facecolor("white")
     fig.subplots_adjust(left=0.08, right=0.98, top=0.95, bottom=0.35)
-    fig.suptitle("Align brains — rotate with sliders, then Save", fontsize=11)
+    mode_label = "Slide-tags BC28/BC3" if args.slidetags else "Slide-seq B14/B03"
+    fig.suptitle(f"Align brains [{mode_label}] — rotate with sliders, then Save", fontsize=11)
 
     ax.set_aspect("equal")
     ax.set_xticks([])
