@@ -28,11 +28,11 @@ neuron_score_threshold: 330      # applied to neurons (Glut, Gaba, IMN)
 non_neuron_score_threshold: 330  # applied to non-neurons (singlet class only)
 
 # ── Visual parameters ────────────────────────────────────────────────────────
-dot_size_bg: 4.0    # background beads (all quality-filtered, gray)
-dot_size_fg: 35.0    # foreground beads (selected cell type, colored)
+dot_size_bg: 10.0    # background beads (all quality-filtered, gray)
+dot_size_fg: 40.0    # foreground beads (selected cell type, colored)
 bg_color: "#CCCCCC"
-fg_zero_color: "#D4A843"  # color for selected beads with zero expression
-colormap: "#C8A8DB:#420966"  # "#start:#end" → linear colormap; or any matplotlib colormap name
+fg_zero_color: "#732B8B"  # color for selected beads with zero expression
+colormap: "#FFED94:#FFD400"  # "#start:#end" → linear colormap; or any matplotlib colormap name
 
 # ── Crop ─────────────────────────────────────────────────────────────────────
 # Set to true to apply the rectangular crop defined in conf/hemisphere_params.json.
@@ -44,6 +44,10 @@ fig_height: 10
 dpi: 300
 scale_bar_um: 500   # length of scale bar in micrometres
 text_scale: 2.0     # multiply all font sizes by this factor (e.g. 2.0 to double)
+
+# ── Panel assembly ───────────────────────────────────────────────────────────
+row_gap_pt: 50      # gap between panel rows in PDF points (~1000 µm at figure scale)
+row_dot_sizes: [null, 70.0]  # per-row foreground dot size override; null = use dot_size_fg above
 
 # ── Output ───────────────────────────────────────────────────────────────────
 processed_csv: data/processed/spatial_expression_{gene}.csv

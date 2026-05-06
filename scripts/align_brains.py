@@ -1,13 +1,15 @@
 """
-Interactive alignment tool — rotate and position two full brains
-relative to each other. Updates conf/brain_params.json on Save.
+Interactive alignment tool — rotate and position two brain sections
+relative to each other. Saves alignment params to a JSON file in conf/.
 
 Usage:
-    uv run python scripts/align_brains.py
+    uv run python scripts/align_brains.py                # Slide-seq brains
+    uv run python scripts/align_brains.py --slidetags    # Slide-tags BC28/BC3
 
 Requirements: active display (run locally).
 """
 
+import argparse
 import json
 import sys
 from pathlib import Path
@@ -25,15 +27,29 @@ import numpy as np
 import pandas as pd
 from matplotlib.widgets import Button, Slider
 
-ROOT   = Path(__file__).resolve().parents[1]
-CSV    = ROOT / "data" / "processed" / "hemisphere_coords.csv"
-PARAMS = ROOT / "conf" / "brain_params.json"
+ROOT = Path(__file__).resolve().parents[1]
+
+parser = argparse.ArgumentParser()
+parser.add_argument("--slidetags", action="store_true",
+                    help="Align Slide-tags sections (BC28=OIL, BC3=CORT)")
+args = parser.parse_args()
+
+if args.slidetags:
+    CSV        = ROOT / "data" / "Spatial" / "slide_tags" / "coords_BC28_BC3_score0.5.csv"
+    PARAMS     = ROOT / "conf" / "slide_tags_params.json"
+    X_COL      = "x_um"
+    Y_COL      = "y_um"
+    OIL_SAMPLE  = "BC28"
+    CORT_SAMPLE = "BC3"
+else:
+    CSV        = ROOT / "data" / "processed" / "hemisphere_coords.csv"
+    PARAMS     = ROOT / "conf" / "brain_params.json"
+    X_COL      = "x"
+    Y_COL      = "y"
+    OIL_SAMPLE  = "B14"
+    CORT_SAMPLE = "B03"
 
 PREVIEW_N = 5000
-
-# Samples
-OIL_SAMPLE  = "B14"
-CORT_SAMPLE = "B03"
 
 
 def rotate(x, y, angle_deg):
@@ -63,10 +79,10 @@ def main():
     sub_oil  = df[df["sample"] == OIL_SAMPLE]
     sub_cort = df[df["sample"] == CORT_SAMPLE]
 
-    x_oil_raw  = sub_oil["x"].to_numpy(float)
-    y_oil_raw  = sub_oil["y"].to_numpy(float)
-    x_cort_raw = sub_cort["x"].to_numpy(float)
-    y_cort_raw = sub_cort["y"].to_numpy(float)
+    x_oil_raw  = sub_oil[X_COL].to_numpy(float)
+    y_oil_raw  = sub_oil[Y_COL].to_numpy(float)
+    x_cort_raw = sub_cort[X_COL].to_numpy(float)
+    y_cort_raw = sub_cort[Y_COL].to_numpy(float)
 
     # Centre each brain at origin before subsampling (rotation applied in update)
     x_oil_raw  -= x_oil_raw.mean()

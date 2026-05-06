@@ -244,8 +244,12 @@ def main():
     parser.add_argument("gene",      help="Gene symbol (e.g. Sgk1)")
     parser.add_argument("--dot-size", type=float, default=None,
                         help="Override dot size for bg and fg")
+    parser.add_argument("--dot-size-fg", type=float, default=None,
+                        help="Override foreground dot size only")
     parser.add_argument("--no-cell-type-label", action="store_true",
                         help="Omit the cell type label above the colorbar")
+    parser.add_argument("--out", type=Path, default=None,
+                        help="Override output path (default: figures/genes_half_half/fig_spatial_<gene>_<cell_type>_v3.pdf)")
     args = parser.parse_args()
 
     cfg = load_config()
@@ -254,6 +258,8 @@ def main():
     if args.dot_size is not None:
         cfg["dot_size_bg"] = args.dot_size
         cfg["dot_size_fg"] = args.dot_size
+    if args.dot_size_fg is not None:
+        cfg["dot_size_fg"] = args.dot_size_fg
     cfg["gene"]           = args.gene
     cfg["_cell_type_arg"] = args.cell_type
 
@@ -366,28 +372,64 @@ def main():
         spine.set_visible(False)
 
     df_bg_combined = pd.concat([df for _, df in df_bg_placed])
-    add_scale_bar(ax, cfg["scale_bar_um"], df_bg_combined, cfg)
 
-    # OIL / CORT labels — symmetric distance from gap centre (x=0)
-    x_range   = df_bg_combined["x"].max() - df_bg_combined["x"].min()
-    margin    = x_range * 0.02
+    use_crop = cfg.get("use_crop", False) and "crop" in hparams
+    cr = hparams["crop"] if use_crop else {}
+
+    # OIL / CORT labels
+    x_range = df_bg_combined["x"].max() - df_bg_combined["x"].min()
+    margin  = x_range * 0.02
     hem_left  = next((lbl, df) for lbl, df in df_bg_placed if df["x"].mean() < 0)
     hem_right = next((lbl, df) for lbl, df in df_bg_placed if df["x"].mean() >= 0)
     x_sym   = max(abs(hem_left[1]["x"].min()), abs(hem_right[1]["x"].max())) + margin
-    x_label = x_sym / 4 + 600
-    y_label = max(hem_left[1]["y"].max(), hem_right[1]["y"].max())
-    ax.text(-x_label, y_label, hem_left[0],
-            ha="right", va="top", fontsize=24 * cfg["text_scale"], fontweight="bold")
-    ax.text(+x_label, y_label, hem_right[0],
-            ha="left",  va="top", fontsize=24 * cfg["text_scale"], fontweight="bold")
 
-    # Force gap centre (x=0) to be the figure centre
+    if use_crop:
+        # Place labels above the axes box using axes-fraction coords (unaffected by aspect="equal")
+        ax.text(0.25, 1.02, hem_left[0],
+                ha="center", va="bottom", fontsize=24 * cfg["text_scale"], fontweight="bold",
+                transform=ax.transAxes, clip_on=False)
+        ax.text(0.75, 1.02, hem_right[0],
+                ha="center", va="bottom", fontsize=24 * cfg["text_scale"], fontweight="bold",
+                transform=ax.transAxes, clip_on=False)
+    else:
+        x_label = x_sym / 4 + 600
+        y_label = max(hem_left[1]["y"].max(), hem_right[1]["y"].max())
+        ax.text(-x_label, y_label, hem_left[0],
+                ha="right", va="top", fontsize=24 * cfg["text_scale"], fontweight="bold")
+        ax.text(+x_label, y_label, hem_right[0],
+                ha="left",  va="top", fontsize=24 * cfg["text_scale"], fontweight="bold")
+
+    # Scale bar
+    if use_crop:
+        # Convert µm offsets to axes-fraction using the crop y range
+        crop_yr  = cr["y_max"] - cr["y_min"]
+        crop_xr  = cr["x_max"] - cr["x_min"]
+        sb_drop  = 500  / crop_yr   # 500 µm below axes bottom
+        cb_drop  = 1000 / crop_yr   # additional 1000 µm below scale bar label
+
+        scale_um = cfg["scale_bar_um"]
+        sb_frac  = scale_um / crop_xr   # bar width in axes-x fraction
+        sb_x1    = 0.97                 # right-aligned, 3% from right edge
+        sb_x0    = sb_x1 - sb_frac
+        sb_y     = -(sb_drop)
+        from matplotlib.lines import Line2D
+        ax.add_artist(Line2D([sb_x0, sb_x1], [sb_y, sb_y],
+                             transform=ax.transAxes, color="black", lw=2,
+                             solid_capstyle="butt", clip_on=False))
+        sb_label = f"{int(scale_um/1000)} mm" if scale_um >= 1000 else f"{int(scale_um)} µm"
+        sb_label_y = sb_y - 0.02
+        ax.text((sb_x0 + sb_x1) / 2, sb_label_y, sb_label,
+                ha="center", va="top", fontsize=16 * cfg["text_scale"], color="black",
+                transform=ax.transAxes, clip_on=False)
+    else:
+        add_scale_bar(ax, cfg["scale_bar_um"], df_bg_combined, cfg)
+
+    # Axis limits
     x_half = max(abs(df_bg_combined["x"].min()), abs(df_bg_combined["x"].max()), x_sym)
     y_all  = df_bg_combined["y"]
     y_mid  = y_all.mean()
     y_half = max(y_all.max() - y_mid, y_mid - y_all.min())
-    if cfg.get("use_crop", False) and "crop" in hparams:
-        cr = hparams["crop"]
+    if use_crop:
         ax.set_xlim(cr["x_min"], cr["x_max"])
         ax.set_ylim(cr["y_min"], cr["y_max"])
         print(f"Crop applied: x=[{cr['x_min']:.0f}, {cr['x_max']:.0f}]  y=[{cr['y_min']:.0f}, {cr['y_max']:.0f}]")
@@ -401,7 +443,22 @@ def main():
     fg_label   = alias or (subclass if isinstance(subclass, str) else None) or cell_class
 
     if sc_obj is not None:
-        cbar_ax = fig.add_axes([0.35, 0.01, 0.3, 0.06])
+        if use_crop:
+            # Match the physical colorbar height used in non-crop mode (0.06 * fig_height inches).
+            # The crop axes box height is estimated from the data aspect ratio + subplots margins.
+            fig_w, fig_h = cfg["fig_width"], cfg["fig_height"]
+            avail_w = (0.98 - 0.02) * fig_w
+            avail_h = (0.97 - 0.02) * fig_h
+            axes_w_est = min(avail_w, avail_h * (crop_xr / crop_yr))  # inches
+            axes_h_est = axes_w_est / (crop_xr / crop_yr)             # inches
+            cb_h = 0.06 * fig_h / axes_h_est   # axes-y fraction matching non-crop physical height
+            cb_w = 0.30 * fig_w / axes_w_est   # axes-x fraction matching non-crop physical width
+            cb_x = 0.5 - cb_w / 2              # centered
+
+            cb_top = sb_label_y - cb_drop - 0.02
+            cbar_ax = ax.inset_axes([cb_x, cb_top - cb_h, cb_w, cb_h])
+        else:
+            cbar_ax = fig.add_axes([0.35, 0.01, 0.3, 0.06])
         cb = fig.colorbar(sc_obj, cax=cbar_ax, orientation="horizontal")
         cb.set_ticks([0, vmax])
         cb.set_ticklabels(["0", f"{vmax:.2g}"])
@@ -410,12 +467,13 @@ def main():
         if fg_label and not args.no_cell_type_label:
             cbar_ax.set_title(fg_label, fontsize=20 * cfg["text_scale"], pad=8, fontweight="bold")
 
-    plt.subplots_adjust(left=0.02, right=0.98, top=0.97, bottom=0.07, wspace=0)
+    bottom_margin = 0.02 if use_crop else 0.07
+    plt.subplots_adjust(left=0.02, right=0.98, top=0.97, bottom=bottom_margin, wspace=0)
 
     cell_type_slug = (
         alias or (subclass if isinstance(subclass, str) else None) or cell_class or "all"
     ).replace(" ", "_")
-    out_path = ROOT / "figures" / "genes_half_half" / f"fig_spatial_{gene}_{cell_type_slug}_v3.pdf"
+    out_path = args.out or ROOT / "figures" / "genes_half_half" / f"fig_spatial_{gene}_{cell_type_slug}_v3.pdf"
     out_path.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(out_path, bbox_inches="tight", facecolor="white")
     print(f"Saved → {out_path}")

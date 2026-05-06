@@ -18,13 +18,19 @@ import sys
 from pathlib import Path
 
 import fitz  # PyMuPDF
+import yaml
 
 ROOT       = Path(__file__).resolve().parents[1]
 FIG_SCRIPT = ROOT / "scripts" / "figure_code" / "fig_spatial_expression_v3.py"
 OUTFILE    = ROOT / "figures" / "genes_half_half" / "panel_hippo_4x2.pdf"
 
+with open(ROOT / "conf" / "spatial_expression.yaml") as _f:
+    _cfg = yaml.safe_load(_f)
+
 # ── Panel definition ──────────────────────────────────────────────────────────
-# Each entry: (cell_type, [gene, ...]) — defines one row, left to right.
+# Per-row foreground dot size overrides come from row_dot_sizes in spatial_expression.yaml.
+
+_row_dot_sizes = _cfg.get("row_dot_sizes", [])
 
 ROWS = [
     ("Hippocampus", ["Nr3c1", "Nr3c2", "Nr4a3", "Ifngr1"]),
@@ -34,6 +40,7 @@ ROWS = [
 NCOLS           = 4
 NROWS           = len(ROWS)
 CELL_TYPE_LABEL = False
+ROW_GAP         = _cfg.get("row_gap_pt", 50)
 
 
 def figure_path(cell_type: str, gene: str) -> Path:
@@ -46,13 +53,18 @@ def figure_path(cell_type: str, gene: str) -> Path:
 # ── Step 1: generate figures ──────────────────────────────────────────────────
 
 def generate_figures():
-    for cell_type, genes in ROWS:
+    for row_idx, (cell_type, genes) in enumerate(ROWS):
+        dot_size = _row_dot_sizes[row_idx] if row_idx < len(_row_dot_sizes) else None
         for gene in genes:
             out = figure_path(cell_type, gene)
+            out.parent.mkdir(parents=True, exist_ok=True)
             print(f"Generating {gene} ({cell_type})…")
-            cmd = ["uv", "run", "python", str(FIG_SCRIPT), cell_type, gene]
+            cmd = ["uv", "run", "python", str(FIG_SCRIPT), cell_type, gene,
+                   "--out", str(out)]
             if not CELL_TYPE_LABEL:
                 cmd.append("--no-cell-type-label")
+            if dot_size is not None:
+                cmd += ["--dot-size-fg", str(dot_size)]
             subprocess.run(cmd, check=True, cwd=ROOT)
             if not out.exists():
                 print(f"  ERROR: expected output not found: {out}", file=sys.stderr)
@@ -74,7 +86,7 @@ def assemble_panel():
             cell_w, cell_h = r.width, r.height
 
     panel_w = cell_w * NCOLS
-    panel_h = cell_h * NROWS
+    panel_h = cell_h * NROWS + ROW_GAP * (NROWS - 1)
 
     out_doc = fitz.open()
     page = out_doc.new_page(width=panel_w, height=panel_h)
@@ -83,7 +95,7 @@ def assemble_panel():
         col = idx % NCOLS
         row = idx // NCOLS
         x0 = col * cell_w
-        y0 = row * cell_h
+        y0 = row * (cell_h + ROW_GAP)
         cell_rect = fitz.Rect(x0, y0, x0 + cell_w, y0 + cell_h)
 
         src = fitz.open(pdf_path)
