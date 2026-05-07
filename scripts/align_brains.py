@@ -36,7 +36,7 @@ args = parser.parse_args()
 
 if args.slidetags:
     CSV        = ROOT / "data" / "Spatial" / "slide_tags" / "coords_BC28_BC3_score0.5.csv"
-    PARAMS     = ROOT / "conf" / "slide_tags_params.json"
+    PARAMS     = ROOT / "conf" / "slidetags_coords.json"
     X_COL      = "x_um"
     Y_COL      = "y_um"
     OIL_SAMPLE  = "BC28"
