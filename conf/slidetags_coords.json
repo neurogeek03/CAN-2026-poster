@@ -1,0 +1,14 @@
+{
+  "oil": {
+    "sample": "BC28",
+    "rotation_deg": -72.0
+  },
+  "cort": {
+    "sample": "BC3",
+    "rotation_deg": -114.0
+  },
+  "alignment": {
+    "x_gap_um": 670.0,
+    "y_offset_um": -4.7321750000000975
+  }
+}
